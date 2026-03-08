@@ -1,0 +1,63 @@
+# ==================== 构建产物 ====================
+build/
+build-*/
+dist-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# ==================== 编译中间文件 ====================
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# ==================== 打包产物 ====================
+*.zip
+*.apk
+*.aab
+*.app/
+AolaNuanNuan-Windows-Portable/
+
+# ==================== 依赖 ====================
+mingw-deps/
+
+# ==================== Android ====================
+# 依赖（由 setup_deps.sh 自动下载）
+android/app/src/main/jni/SDL2/
+android/app/src/main/jni/SDL2_image/
+android/app/src/main/jni/SDL2_ttf/
+android/app/src/main/jni/nlohmann/
+android/app/src/main/jni/sqlite3/
+android/app/src/main/java/org/libsdl/
+android/app/src/java/org/libsdl/
+
+# 自动下载的字体和数据
+android/app/src/main/assets/fonts/
+android/app/src/main/assets/*.json
+
+# 构建缓存
+android/app/.cxx/
+android/app/build/
+android/.gradle/
+android/build/
+android/local.properties
+
+# ==================== IDE / 编辑器 ====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==================== 运行时数据 ====================
+*.db
+cache/

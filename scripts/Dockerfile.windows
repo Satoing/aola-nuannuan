@@ -1,0 +1,100 @@
+# Dockerfile - 用于交叉编译 Windows 版本
+# 使用方法: docker build -t aola-win-builder . && docker run --rm -v $(pwd):/src aola-win-builder
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 安装交叉编译工具和基础依赖
+RUN apt-get update && apt-get install -y \
+    cmake \
+    pkg-config \
+    mingw-w64 \
+    wget \
+    unzip \
+    git \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# SDL2 mingw 开发包版本
+ENV SDL2_VER=2.30.10
+ENV SDL2_IMAGE_VER=2.8.4
+ENV SDL2_TTF_VER=2.22.0
+ENV CURL_VER=8.11.1
+ENV SQLITE_VER=3470200
+
+# 创建依赖安装目录
+RUN mkdir -p /mingw-deps/lib/pkgconfig /mingw-deps/include /mingw-deps/bin
+
+WORKDIR /tmp/deps
+
+# 下载并安装 SDL2 mingw 开发包
+RUN wget -q https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_VER}/SDL2-devel-${SDL2_VER}-mingw.tar.gz \
+    && tar xzf SDL2-devel-${SDL2_VER}-mingw.tar.gz \
+    && cp -r SDL2-${SDL2_VER}/x86_64-w64-mingw32/* /mingw-deps/ \
+    && rm -rf SDL2-*
+
+# SDL2_image
+RUN wget -q https://github.com/libsdl-org/SDL_image/releases/download/release-${SDL2_IMAGE_VER}/SDL2_image-devel-${SDL2_IMAGE_VER}-mingw.tar.gz \
+    && tar xzf SDL2_image-devel-${SDL2_IMAGE_VER}-mingw.tar.gz \
+    && cp -r SDL2_image-${SDL2_IMAGE_VER}/x86_64-w64-mingw32/* /mingw-deps/ \
+    && rm -rf SDL2_image-*
+
+# SDL2_ttf
+RUN wget -q https://github.com/libsdl-org/SDL_ttf/releases/download/release-${SDL2_TTF_VER}/SDL2_ttf-devel-${SDL2_TTF_VER}-mingw.tar.gz \
+    && tar xzf SDL2_ttf-devel-${SDL2_TTF_VER}-mingw.tar.gz \
+    && cp -r SDL2_ttf-${SDL2_TTF_VER}/x86_64-w64-mingw32/* /mingw-deps/ \
+    && rm -rf SDL2_ttf-*
+
+# nlohmann/json (header-only)
+RUN wget -q https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp \
+    && mkdir -p /mingw-deps/include/nlohmann \
+    && mv json.hpp /mingw-deps/include/nlohmann/json.hpp
+
+# 创建 nlohmann_json CMake 配置
+RUN mkdir -p /mingw-deps/lib/cmake/nlohmann_json && \
+    echo 'add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED)\n\
+set_target_properties(nlohmann_json::nlohmann_json PROPERTIES\n\
+    INTERFACE_INCLUDE_DIRECTORIES "/mingw-deps/include"\n\
+)' > /mingw-deps/lib/cmake/nlohmann_json/nlohmann_jsonConfig.cmake
+
+# libcurl (mingw 预编译)
+RUN wget -q https://curl.se/windows/dl-${CURL_VER}_1/curl-${CURL_VER}_1-win64-mingw.zip \
+    && unzip -q curl-${CURL_VER}_1-win64-mingw.zip \
+    && cp -r curl-${CURL_VER}_1-win64-mingw/include/* /mingw-deps/include/ \
+    && cp -r curl-${CURL_VER}_1-win64-mingw/lib/* /mingw-deps/lib/ \
+    && cp curl-${CURL_VER}_1-win64-mingw/bin/*.dll /mingw-deps/bin/ \
+    && rm -rf curl-*
+
+# 创建 CURL CMake 配置
+RUN mkdir -p /mingw-deps/lib/cmake/CURL && \
+    echo 'add_library(CURL::libcurl SHARED IMPORTED)\n\
+set_target_properties(CURL::libcurl PROPERTIES\n\
+    IMPORTED_LOCATION "/mingw-deps/bin/libcurl-x64.dll"\n\
+    IMPORTED_IMPLIB "/mingw-deps/lib/libcurl.dll.a"\n\
+    INTERFACE_INCLUDE_DIRECTORIES "/mingw-deps/include"\n\
+)' > /mingw-deps/lib/cmake/CURL/CURLConfig.cmake
+
+# SQLite3 (从源码编译)
+RUN wget -q https://www.sqlite.org/2024/sqlite-amalgamation-${SQLITE_VER}.zip \
+    && unzip -q sqlite-amalgamation-${SQLITE_VER}.zip \
+    && cd sqlite-amalgamation-${SQLITE_VER} \
+    && x86_64-w64-mingw32-gcc -c -O2 -DSQLITE_ENABLE_FTS5 sqlite3.c -o sqlite3.o \
+    && x86_64-w64-mingw32-ar rcs /mingw-deps/lib/libsqlite3.a sqlite3.o \
+    && cp sqlite3.h /mingw-deps/include/ \
+    && cd .. && rm -rf sqlite-amalgamation-*
+
+# 创建 sqlite3 pkg-config 文件
+RUN echo 'prefix=/mingw-deps\n\
+libdir=${prefix}/lib\n\
+includedir=${prefix}/include\n\
+\n\
+Name: SQLite3\n\
+Description: SQL database engine\n\
+Version: 3.47.2\n\
+Libs: -L${libdir} -lsqlite3\n\
+Cflags: -I${includedir}' > /mingw-deps/lib/pkgconfig/sqlite3.pc
+
+WORKDIR /src
+
+# 构建入口脚本
+CMD ["bash", "build_windows.sh"]
