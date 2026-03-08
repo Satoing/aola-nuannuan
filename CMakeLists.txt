@@ -84,13 +84,15 @@ else()
         target_link_directories(${PROJECT_NAME} PRIVATE
             ${CURL_LIBRARY_DIR}
         )
+        # curl 静态链接需要定义 CURL_STATICLIB
+        target_compile_definitions(${PROJECT_NAME} PRIVATE CURL_STATICLIB)
         target_link_libraries(${PROJECT_NAME} PRIVATE
             ${SDL2_LIBRARIES}
             ${SDL2_IMAGE_LIBRARIES}
             ${SDL2_TTF_LIBRARIES}
             ${CURL_LIBRARIES}
             ${SQLITE3_LIBRARIES}
-            ws2_32 crypt32 wldap32
+            z ws2_32 crypt32 wldap32 bcrypt
         )
     else()
         # macOS/Linux: 使用 find_package
