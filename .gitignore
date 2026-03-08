@@ -23,11 +23,17 @@ Makefile
 *.aab
 *.app/
 AolaNuanNuan-Windows-Portable/
+AolaNuanNuan-Android-Portable/
 
 # ==================== 依赖 ====================
 mingw-deps/
 
 # ==================== Android ====================
+# 签名密钥和配置（敏感信息）
+*.keystore
+*.jks
+android/keystore.properties
+
 # 依赖（由 setup_deps.sh 自动下载）
 android/app/src/main/jni/SDL2/
 android/app/src/main/jni/SDL2_image/
