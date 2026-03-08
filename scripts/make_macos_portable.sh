@@ -8,7 +8,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
 APP_NAME="奥拉暖暖"
-BUNDLE_NAME="AolaDressUp"
+BUNDLE_NAME="AolaNuanNuan"
 BUILD_DIR="build-portable"
 APP_DIR="${BUNDLE_NAME}.app"
 CONTENTS="${APP_DIR}/Contents"
