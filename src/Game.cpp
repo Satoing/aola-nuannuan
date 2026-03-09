@@ -36,7 +36,10 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 // 辅助函数：在唤起文本输入前设置输入区域（Android 上必须设置才能弹出软键盘）
+// 注意：Android 上用户可能通过系统返回键收起软键盘，此时 SDL 内部仍认为 TextInput 处于激活状态，
+// 导致再次调用 SDL_StartTextInput() 时不会重新弹出键盘。因此先 Stop 再 Start 确保重置状态。
 static void ActivateTextInput(int x, int y, int w, int h) {
+    SDL_StopTextInput();
     SDL_Rect rect = { x, y, w, h };
     SDL_SetTextInputRect(&rect);
     SDL_StartTextInput();
@@ -406,6 +409,12 @@ std::vector<SuitItem> Game::GetFilteredSuits() const {
 }
 
 void Game::WearSuit(const SuitItem& suit) {
+    // 如果当前已穿着该套装，则卸下（toggle 逻辑）
+    if (IsSuitWorn(suit)) {
+        UnwearSuit();
+        std::cout << "卸下套装: " << suit.name << std::endl;
+        return;
+    }
     // 先重置为默认底色
     m_avatar->SetClothes(m_defaultClothes);
     // 逐件穿戴套装中的服装
@@ -416,6 +425,38 @@ void Game::WearSuit(const SuitItem& suit) {
     }
     m_avatar->LoadParts();
     std::cout << "穿戴套装: " << suit.name << " (" << suit.clothesList.size() << "件)" << std::endl;
+}
+
+bool Game::IsSuitWorn(const SuitItem& suit) const {
+    for (int cid : suit.clothesList) {
+        if (!m_avatar->IsWearing(cid)) return false;
+    }
+    return true;
+}
+
+void Game::UnwearSuit() {
+    m_avatar->SetClothes(m_defaultClothes);
+    m_avatar->LoadParts();
+}
+
+std::vector<ClothItem> Game::GetCurrentWornItems() const {
+    std::vector<ClothItem> result;
+    const auto& clothes = m_avatar->GetClothes();
+    // 构建默认服装集合，用于过滤
+    std::unordered_set<int> defaultSet(m_defaultClothes.begin(), m_defaultClothes.end());
+    for (int clothID : clothes) {
+        if (defaultSet.count(clothID)) continue; // 跳过默认底色服装
+        auto it = g_clothData.find(clothID);
+        if (it != g_clothData.end()) {
+            ClothItem item;
+            item.clothID = it->second.clothID;
+            item.name = it->second.clothName;
+            item.clothType = it->second.clothType;
+            item.clothVal = it->second.clothVal;
+            result.push_back(item);
+        }
+    }
+    return result;
 }
 
 // ==================== 事件处理 ====================
@@ -458,6 +499,8 @@ void Game::HandleEvents() {
                     int itemCount = 0;
                     if (m_currentCategory == CAT_SUIT) {
                         itemCount = (int)GetFilteredSuits().size();
+                    } else if (m_currentCategory == CAT_CURRENT) {
+                        itemCount = (int)GetCurrentWornItems().size();
                     } else {
                         itemCount = (int)GetFilteredItems().size();
                     }
@@ -573,6 +616,27 @@ void Game::HandleEvents() {
                                 m_outfitMsg = "剪贴板为空";
                                 m_outfitMsgTime = SDL_GetTicks();
                             }
+                            break;
+                        }
+                    }
+
+                    // 输入框区域点击（加载/保存模式均需要）：点击输入框区域时重新激活软键盘
+                    {
+                        int dlgInputW, dlgInputH, dlgInputX, dlgInputY;
+                        if (m_outfitDialogIsLoad) {
+                            // 加载模式的输入框区域
+                            dlgInputW = 360; dlgInputH = inputH;
+                            dlgInputX = dlgX + (dlgW - 360) / 2;
+                            dlgInputY = inputY;
+                        } else {
+                            // 保存模式的输入框区域
+                            dlgInputW = 280; dlgInputH = 38;
+                            dlgInputX = dlgX + (dlgW - 280) / 2;
+                            dlgInputY = dlgY + 74;
+                        }
+                        if (mx >= dlgInputX && mx < dlgInputX + dlgInputW
+                            && my >= dlgInputY && my < dlgInputY + dlgInputH) {
+                            ActivateTextInput(dlgInputX, dlgInputY, dlgInputW, dlgInputH);
                             break;
                         }
                     }
@@ -925,10 +989,17 @@ void Game::HandleEvents() {
                         int idx = row * GRID_COLS + col;
 
                         if (m_currentCategory == CAT_SUIT) {
-                            // 套装模式：一键穿戴
+                            // 套装模式：一键穿戴/卸下
                             auto suits = GetFilteredSuits();
                             if (idx >= 0 && idx < (int)suits.size()) {
                                 WearSuit(suits[idx]);
+                            }
+                        } else if (m_currentCategory == CAT_CURRENT) {
+                            // 当前穿戴模式：点击可卸下单件
+                            auto items = GetCurrentWornItems();
+                            if (idx >= 0 && idx < (int)items.size()) {
+                                m_avatar->RemoveCloth(items[idx].clothID);
+                                m_avatar->LoadParts();
                             }
                         } else {
                             // 普通服装模式
@@ -1028,6 +1099,8 @@ void Game::HandleEvents() {
                         int itemCount = 0;
                         if (m_currentCategory == CAT_SUIT) {
                             itemCount = (int)GetFilteredSuits().size();
+                        } else if (m_currentCategory == CAT_CURRENT) {
+                            itemCount = (int)GetCurrentWornItems().size();
                         } else {
                             itemCount = (int)GetFilteredItems().size();
                         }
@@ -1190,6 +1263,13 @@ void Game::HandleEvents() {
                                 auto suits = GetFilteredSuits();
                                 if (idx >= 0 && idx < (int)suits.size()) {
                                     WearSuit(suits[idx]);
+                                }
+                            } else if (m_currentCategory == CAT_CURRENT) {
+                                // 当前穿戴模式：点击可卸下单件
+                                auto items = GetCurrentWornItems();
+                                if (idx >= 0 && idx < (int)items.size()) {
+                                    m_avatar->RemoveCloth(items[idx].clothID);
+                                    m_avatar->LoadParts();
                                 }
                             } else {
                                 auto items = GetFilteredItems();
@@ -1441,6 +1521,8 @@ void Game::Update() {
             int itemCount = 0;
             if (m_currentCategory == CAT_SUIT) {
                 itemCount = (int)GetFilteredSuits().size();
+            } else if (m_currentCategory == CAT_CURRENT) {
+                itemCount = (int)GetCurrentWornItems().size();
             } else {
                 itemCount = (int)GetFilteredItems().size();
             }
@@ -1535,6 +1617,8 @@ void Game::DrawLeftPanel() {
         int count = 0;
         if (i == CAT_SUIT) {
             count = (int)m_suitItems.size();
+        } else if (i == CAT_CURRENT) {
+            count = (int)GetCurrentWornItems().size();
         } else {
             auto it = m_categoryItems.find(i);
             count = (it != m_categoryItems.end()) ? (int)it->second.size() : 0;
@@ -1996,6 +2080,88 @@ void Game::DrawClothGrid() {
                 DrawTextCentered(displayName, nameArea, m_fontSmall, (SDL_Color){85, 55, 70, 255});
             }
         }
+    } else if (m_currentCategory == CAT_CURRENT) {
+        // ========== 当前穿戴网格模式 ==========
+        auto items = GetCurrentWornItems();
+        itemCount = (int)items.size();
+
+        if (itemCount == 0) {
+            // 无当前穿戴时显示提示
+            DrawTextCentered("当前没有额外穿戴的服装",
+                {panelX, gridTop + gridHeight / 2 - 20, curRightW, 40},
+                m_font, C_GRAY);
+        }
+
+        for (int i = 0; i < itemCount; i++) {
+            int row = i / GRID_COLS;
+            int col = i % GRID_COLS;
+
+            int cellX = panelX + GRID_PADDING + col * cellTotalW;
+            int cellY = gridTop + GRID_PADDING + row * cellTotalH - m_gridScrollOffset;
+
+            if (cellY + GRID_CELL_SIZE + GRID_NAME_H < gridTop || cellY > gridTop + gridHeight) continue;
+
+            SDL_Rect fullCard = {cellX, cellY, GRID_CELL_SIZE, GRID_CELL_SIZE + GRID_NAME_H};
+            SDL_Rect cellRect = {cellX, cellY, GRID_CELL_SIZE, GRID_CELL_SIZE};
+            bool hovered = (mx >= fullCard.x && mx < fullCard.x + fullCard.w &&
+                           my >= fullCard.y && my < fullCard.y + fullCard.h);
+
+            // 当前穿戴的服装都是选中态
+            if (hovered) {
+                DrawRoundedRect(fullCard, (SDL_Color){250, 215, 225, 255}, CARD_RADIUS);
+            } else {
+                DrawRoundedRect(fullCard, (SDL_Color){240, 205, 220, 255}, CARD_RADIUS);
+            }
+
+            // 缩略图
+            SDL_Texture* thumb = GetThumbTexture(items[i].clothID);
+            if (thumb) {
+                int tw, th;
+                SDL_QueryTexture(thumb, nullptr, nullptr, &tw, &th);
+                int maxSize = GRID_CELL_SIZE - 12;
+                float scale = std::min((float)maxSize / tw, (float)maxSize / th);
+                int dw = (int)(tw * scale);
+                int dh = (int)(th * scale);
+                SDL_Rect thumbDst = {
+                    cellX + (GRID_CELL_SIZE - dw) / 2,
+                    cellY + (GRID_CELL_SIZE - dh) / 2,
+                    dw, dh
+                };
+                SDL_RenderCopy(m_renderer, thumb, nullptr, &thumbDst);
+            }
+
+            // 时尚值角标（左上角，圆角）
+            if (items[i].clothVal > 0) {
+                std::string valStr = std::to_string(items[i].clothVal);
+                int tagW = 32, tagH = 26;
+                SDL_Rect valTag = {cellX + 4, cellY + 4, tagW, tagH};
+                DrawRoundedRect(valTag, tagBg, 12);
+                DrawTextCentered(valStr, valTag, m_font, C_WHITE);
+            }
+
+            // 名称（卡片下方）
+            std::string displayName = items[i].name;
+            {
+                int charCount = 0, bytePos = 0;
+                while (bytePos < (int)displayName.size() && charCount < 5) {
+                    unsigned char c = displayName[bytePos];
+                    if (c < 0x80) bytePos += 1;
+                    else if (c < 0xE0) bytePos += 2;
+                    else if (c < 0xF0) bytePos += 3;
+                    else bytePos += 4;
+                    charCount++;
+                }
+                if (bytePos < (int)displayName.size()) {
+                    displayName = displayName.substr(0, bytePos) + "...";
+                }
+            }
+            SDL_Rect nameArea = {cellX, cellY + GRID_CELL_SIZE, GRID_CELL_SIZE, GRID_NAME_H};
+            DrawRoundedRect(nameArea, (SDL_Color){210, 130, 155, 230}, CARD_RADIUS);
+            SDL_Rect topCover = {cellX, cellY + GRID_CELL_SIZE, GRID_CELL_SIZE, CARD_RADIUS};
+            SDL_SetRenderDrawColor(m_renderer, 210, 130, 155, 230);
+            SDL_RenderFillRect(m_renderer, &topCover);
+            DrawTextCentered(displayName, nameArea, m_fontSmall, C_WHITE);
+        }
     } else {
         // ========== 普通服装网格模式 ==========
         auto items = GetFilteredItems();
@@ -2108,13 +2274,16 @@ void Game::DrawBottomBar() {
 
     if (curRightW <= 0) return; // 收起时不绘制
 
+    // 使用完整面板宽度布局，整体跟随panelX滑动（收起时滑出屏幕右侧）
+    int fullW = RIGHT_PANEL_W;
+
     // 背景
-    SDL_Rect bg = {panelX, barY, curRightW, BOTTOM_BAR_H};
+    SDL_Rect bg = {panelX, barY, fullW, BOTTOM_BAR_H};
     FillRect(bg, C_BOTTOM_BG);
 
     // 顶部分割线
     SDL_SetRenderDrawColor(m_renderer, C_DIVIDER.r, C_DIVIDER.g, C_DIVIDER.b, 255);
-    SDL_RenderDrawLine(m_renderer, panelX, barY, panelX + curRightW, barY);
+    SDL_RenderDrawLine(m_renderer, panelX, barY, panelX + fullW, barY);
 
     // 当前时尚值
     DrawText("当前时尚值", panelX + 15, barY + 8, m_fontSmall, C_GRAY);
@@ -2123,10 +2292,10 @@ void Game::DrawBottomBar() {
     std::string valStr = std::to_string(fashionVal);
     DrawText(valStr, panelX + 15, barY + 28, m_fontLarge, C_FASHION_VAL);
 
-    // 按钮布局（从右到左：加载、保存、重置）
+    // 按钮布局（从右到左：加载、保存、重置，使用完整宽度定位）
     int btnH = 36;
     int btnY = barY + (BOTTOM_BAR_H - btnH) / 2;
-    int loadBtnX = panelX + curRightW - 120;
+    int loadBtnX = panelX + fullW - 120;
     int saveBtnX = loadBtnX - 110;
     int resetBtnX = saveBtnX - 110;
 

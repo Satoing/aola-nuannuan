@@ -59,6 +59,7 @@ enum ClothCategory {
     CAT_WINGS,        // 翅膀/背饰
     CAT_HANDHELD,     // 手持物
     CAT_BACKGROUND,   // 背景
+    CAT_CURRENT,      // 当前穿戴（虚拟分类，展示当前穿着的单件）
     CAT_COUNT
 };
 
@@ -90,6 +91,7 @@ inline CategoryInfo GetCategoryInfo(int cat) {
         {"翅膀",   "CHI BANG"},
         {"手持",   "SHOU CHI"},
         {"背景",   "BEI JING"},
+        {"当前",   "DANG QIAN"},
     };
     if (cat >= 0 && cat < CAT_COUNT) return infos[cat];
     return {"其他", "QI TA"};
@@ -103,7 +105,7 @@ inline const char* GetCategoryName(int cat) {
 // 分类显示顺序（底色放到最下面，背景之前）
 inline const int* GetCategoryDisplayOrder() {
     static const int order[] = {
-        CAT_SUIT, CAT_HAIR, CAT_FACE, CAT_HEAD_DECO,
+        CAT_CURRENT, CAT_SUIT, CAT_HAIR, CAT_FACE, CAT_HEAD_DECO,
         CAT_TOP, CAT_BOTTOM, CAT_SHOES, CAT_ACCESSORY,
         CAT_WINGS, CAT_HANDHELD, CAT_SKIN, CAT_BACKGROUND
     };

@@ -192,8 +192,13 @@ private:
     SDL_Texture* GetThumbTexture(int clothID);
     void LoadThumbAsync(int clothID);
 
-    // 套装一键穿戴
+    // 套装一键穿戴/卸下
     void WearSuit(const SuitItem& suit);
+    void UnwearSuit();                         // 卸下当前套装，恢复默认底色
+    bool IsSuitWorn(const SuitItem& suit) const; // 判断套装是否已穿戴
+
+    // 获取当前穿戴的非默认单件列表（用于"当前"分类显示）
+    std::vector<ClothItem> GetCurrentWornItems() const;
 
     // 根据人模类型设置默认服装和挂载点映射
     void ApplyModelDefaults(int model);
